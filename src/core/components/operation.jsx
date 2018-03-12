@@ -136,7 +136,7 @@ export default class Operation extends PureComponent {
 
             { !showSummary ? null :
                 <div className="opblock-summary-description">
-                  { resolvedSummary || summary }
+                  <Markdown source={ resolvedSummary || summary } />
                 </div>
             }
 
