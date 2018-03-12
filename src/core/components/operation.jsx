@@ -2,11 +2,15 @@ import React, { PureComponent } from "react"
 import PropTypes from "prop-types"
 import { getList } from "core/utils"
 import { getExtensions, sanitizeUrl } from "core/utils"
-import { Iterable } from "immutable"
+import { Iterable, List } from "immutable"
+import ImPropTypes from "react-immutable-proptypes"
+
 
 export default class Operation extends PureComponent {
   static propTypes = {
+    specPath: ImPropTypes.list.isRequired,
     operation: PropTypes.instanceOf(Iterable).isRequired,
+    summary: PropTypes.string,
     response: PropTypes.instanceOf(Iterable),
     request: PropTypes.instanceOf(Iterable),
 
@@ -31,11 +35,14 @@ export default class Operation extends PureComponent {
   static defaultProps = {
     operation: null,
     response: null,
-    request: null
+    request: null,
+    specPath: List(),
+    summary: ""
   }
 
   render() {
     let {
+      specPath,
       response,
       request,
       toggleShown,
@@ -55,9 +62,10 @@ export default class Operation extends PureComponent {
     let operationProps = this.props.operation
 
     let {
+      summary,
+      deprecated,
       isShown,
       isAuthorized,
-      jumpToKey,
       path,
       method,
       op,
@@ -73,14 +81,13 @@ export default class Operation extends PureComponent {
     } = operationProps.toJS()
 
     let {
-      summary,
+      summary: resolvedSummary,
       description,
-      deprecated,
       externalDocs,
       schemes
-    } = op.operation
+    } = op
 
-    let operation = operationProps.getIn(["op", "operation"])
+    let operation = operationProps.getIn(["op"])
     let security = operationProps.get("security")
     let responses = operation.get("responses")
     let produces = operation.get("produces")
@@ -100,12 +107,13 @@ export default class Operation extends PureComponent {
     const Schemes = getComponent( "schemes" )
     const OperationServers = getComponent( "OperationServers" )
     const OperationExt = getComponent( "OperationExt" )
+    const DeepLink = getComponent( "DeepLink" )
 
     const { showExtensions } = getConfigs()
 
     // Merge in Live Response
     if(responses && response && response.size > 0) {
-      let notDocumented = !responses.get(String(response.get("status")))
+      let notDocumented = !responses.get(String(response.get("status"))) && !responses.get("default")
       response = response.set("notDocumented", notDocumented)
     }
 
@@ -114,20 +122,21 @@ export default class Operation extends PureComponent {
     return (
         <div className={deprecated ? "opblock opblock-deprecated" : isShown ? `opblock opblock-${method} is-open` : `opblock opblock-${method}`} id={isShownKey.join("-")} >
           <div className={`opblock-summary opblock-summary-${method}`} onClick={toggleShown} >
+            {/*TODO: convert this into a component, that can be wrapped
+              and pulled in with getComponent */}
               <span className="opblock-summary-method">{method.toUpperCase()}</span>
               <span className={ deprecated ? "opblock-summary-path__deprecated" : "opblock-summary-path" } >
-              <a
-                className="nostyle"
-                onClick={isDeepLinkingEnabled ? (e) => e.preventDefault() : null}
-                href={isDeepLinkingEnabled ? `#/${isShownKey.join("/")}` : null}>
-                <span>{path}</span>
-              </a>
-                <JumpToPath path={jumpToKey} />
+              <DeepLink
+                  enabled={isDeepLinkingEnabled}
+                  isShown={isShown}
+                  path={`${isShownKey.join("/")}`}
+                  text={path} />
+                <JumpToPath path={specPath} /> {/*TODO: use wrapComponents here, swagger-ui doesn't care about jumpToPath */}
               </span>
 
             { !showSummary ? null :
                 <div className="opblock-summary-description">
-                  <Markdown source={ summary } />
+                  { resolvedSummary || summary }
                 </div>
             }
 
@@ -147,6 +156,9 @@ export default class Operation extends PureComponent {
 
           <Collapse isOpened={isShown}>
             <div className="opblock-body">
+              { (operation && operation.size) || operation === null ? null :
+                <img height={"32px"} width={"32px"} src={require("core/../img/rolling-load.svg")} className="opblock-loading-animation" />
+              }
               { deprecated && <h4 className="opblock-title_normal"> Warning: Deprecated</h4>}
               { description &&
                 <div className="opblock-description-wrapper">
@@ -168,22 +180,25 @@ export default class Operation extends PureComponent {
                 </div> : null
               }
 
-              <Parameters
-                parameters={parameters}
-                operation={operation}
-                onChangeKey={onChangeKey}
-                onTryoutClick = { onTryoutClick }
-                onCancelClick = { onCancelClick }
-                tryItOutEnabled = { tryItOutEnabled }
-                allowTryItOut={allowTryItOut}
+              { !operation || !operation.size ? null :
+                <Parameters
+                  parameters={parameters}
+                  specPath={specPath.push("parameters")}
+                  operation={operation}
+                  onChangeKey={onChangeKey}
+                  onTryoutClick = { onTryoutClick }
+                  onCancelClick = { onCancelClick }
+                  tryItOutEnabled = { tryItOutEnabled }
+                  allowTryItOut={allowTryItOut}
 
-                fn={fn}
-                getComponent={ getComponent }
-                specActions={ specActions }
-                specSelectors={ specSelectors }
-                pathMethod={ [path, method] }
-                getConfigs={ getConfigs }
-              />
+                  fn={fn}
+                  getComponent={ getComponent }
+                  specActions={ specActions }
+                  specSelectors={ specSelectors }
+                  pathMethod={ [path, method] }
+                  getConfigs={ getConfigs }
+                />
+              }
 
               { !tryItOutEnabled ? null :
                 <OperationServers
@@ -242,7 +257,8 @@ export default class Operation extends PureComponent {
                     oas3Actions={oas3Actions}
                     specActions={ specActions }
                     produces={ produces }
-                    producesValue={ operation.get("produces_value") }
+                    producesValue={ specSelectors.currentProducesFor([path, method]) }
+                    specPath={specPath.push("responses")}
                     path={ path }
                     method={ method }
                     displayRequestDuration={ displayRequestDuration }

@@ -27,7 +27,7 @@ The module's contents mirrors the `dist` folder you see in the Git repository. T
 
 ```javascript
 const express = require('express')
-const pathToSwaggerUi = require('swagger-ui').absolutePath()
+const pathToSwaggerUi = require('swagger-ui-dist').absolutePath()
 
 const app = express()
 
@@ -37,7 +37,7 @@ app.listen(3000)
 ```
 
 The module also exports `SwaggerUIBundle` and `SwaggerUIStandalonePreset`, so
-if you're in a JavaScript project that can't handle a tranditional npm module,
+if you're in a JavaScript project that can't handle a traditional npm module,
 you could do something like this:
 
 ```js
@@ -49,7 +49,7 @@ const ui = SwaggerUIBundle({
     presets: [
       SwaggerUIBundle.presets.apis,
       SwaggerUIBundle.SwaggerUIStandalonePreset
-    ]
+    ],
     layout: "StandaloneLayout"
   })
 ```
@@ -83,10 +83,10 @@ This will serve Swagger UI at `/swagger` instead of `/`.
 
 ### unpkg
 
-You can embed Swagger-UI's code directly in your HTML by using unkpg's interface:
+You can embed Swagger-UI's code directly in your HTML by using unpkg's interface:
 
 ```html
-<script src="//unpkg.com/swagger-ui-dist@3/swagger-ui-bundle.js">
+<script src="//unpkg.com/swagger-ui-dist@3/swagger-ui-bundle.js"></script>
 <!-- `SwaggerUIBundle` is now available on the page -->
 ```
 

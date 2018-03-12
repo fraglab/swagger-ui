@@ -1,5 +1,6 @@
 import React, { Component } from "react"
 import PropTypes from "prop-types"
+import ImPropTypes from "react-immutable-proptypes"
 
 const propStyle = { color: "#999", fontStyle: "italic" }
 
@@ -12,11 +13,12 @@ export default class ArrayModel extends Component {
     name: PropTypes.string,
     required: PropTypes.bool,
     expandDepth: PropTypes.number,
+    specPath: ImPropTypes.list.isRequired,
     depth: PropTypes.number
   }
 
   render(){
-    let { getComponent, getConfigs, schema, depth, expandDepth, name } = this.props
+    let { getComponent, getConfigs, schema, depth, expandDepth, name, specPath } = this.props
     let description = schema.get("description")
     let items = schema.get("items")
     let title = schema.get("title") || name
@@ -38,16 +40,26 @@ export default class ArrayModel extends Component {
     */
 
     return <span className="model">
-      <ModelCollapse title={titleEl} collapsed={ depth > expandDepth } collapsedContent="[...]">
+      <ModelCollapse title={titleEl} expanded={ depth <= expandDepth } collapsedContent="[...]">
         [
           {
             properties.size ? properties.entrySeq().map( ( [ key, v ] ) => <Property key={`${key}-${v}`} propKey={ key } propVal={ v } propStyle={ propStyle } />) : null
           }
           {
-            !description ? null :
+            !description ? (properties.size ? <div className="markdown"></div> : null) :
               <Markdown source={ description } />
           }
-          <span><Model { ...this.props } getConfigs={ getConfigs } name={null} schema={ items } required={ false } depth={ depth + 1 } /></span>
+          <span>
+            <Model
+              { ...this.props }
+              getConfigs={ getConfigs }
+              specPath={specPath.push("items")}
+              name={null}
+              schema={ items }
+              required={ false }
+              depth={ depth + 1 }
+            />
+          </span>
         ]
       </ModelCollapse>
     </span>
