@@ -69,11 +69,12 @@ export default class Topbar extends React.Component {
     }
   }
 
-  componentWillMount() {
+  componentDidMount() {
     const configs = this.props.getConfigs()
     const urls = configs.urls || []
 
     if(urls && urls.length) {
+      this.loadSpec(urls[this.state.selectedIndex].url)
       let primaryName = configs["urls.primaryName"]
       if(primaryName)
       {
@@ -84,14 +85,6 @@ export default class Topbar extends React.Component {
             }
         })
       }
-    }
-  }
-
-  componentDidMount() {
-    const urls = this.props.getConfigs().urls || []
-
-    if(urls && urls.length) {
-      this.loadSpec(urls[this.state.selectedIndex].url)
     }
   }
 
@@ -140,7 +133,7 @@ export default class Topbar extends React.Component {
       <div className="topbar">
         <div className="wrapper">
           <div className="topbar-wrapper">
-            <Link href="#">
+            <Link>
               <img height="30" width="30" src={ Logo } alt="Swagger UI"/>
               <span>swagger</span>
             </Link>

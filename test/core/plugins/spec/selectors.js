@@ -1,13 +1,23 @@
 /* eslint-env mocha */
 import expect from "expect"
 import { fromJS } from "immutable"
+import { fromJSOrdered } from "core/utils"
 import {
   parameterValues,
   contentTypeValues,
   operationScheme,
   specJsonWithResolvedSubtrees,
-  operationConsumes
+  producesOptionsFor,
 } from "corePlugins/spec/selectors"
+
+import Petstore from "./assets/petstore.json"
+import {
+  operationWithMeta,
+  parameterWithMeta,
+  parameterWithMetaByIdentity,
+  parameterInclusionSettingFor,
+  consumesOptionsFor
+} from "../../../../src/core/plugins/spec/selectors"
 
 describe("spec plugin - selectors", function(){
 
@@ -244,34 +254,6 @@ describe("spec plugin - selectors", function(){
 
   })
 
-  describe("operationConsumes", function(){
-    it("should return the operationConsumes for an operation", function(){
-      // Given
-      let state = fromJS({
-        json: {
-          paths: {
-            "/one": {
-              get: {
-                consumes: [
-                  "application/xml",
-                  "application/something-else"
-                ]
-              }
-            }
-          }
-        }
-      })
-
-      // When
-      let contentTypes = operationConsumes(state, [ "/one", "get" ])
-      // Then
-      expect(contentTypes.toJS()).toEqual([
-        "application/xml",
-        "application/something-else"
-      ])
-    })
-  })
-
   describe("operationScheme", function(){
 
     it("should return the correct scheme for a remote spec that doesn't specify a scheme", function(){
@@ -310,7 +292,6 @@ describe("spec plugin - selectors", function(){
     // })
 
   })
-
 
   describe("specJsonWithResolvedSubtrees", function(){
 
@@ -359,6 +340,648 @@ describe("spec plugin - selectors", function(){
           }
         }
       })
+    })
+    it("should preserve initial map key ordering", function(){
+      // Given
+      let state = fromJSOrdered({
+        json: Petstore,
+        resolvedSubtrees: {
+            paths: {
+              "/pet/{petId}": {
+                post: {
+                  tags: [
+                    "pet"
+                  ],
+                  summary: "Updates a pet in the store with form data",
+                  description: "",
+                  operationId: "updatePetWithForm",
+                  consumes: [
+                    "application/x-www-form-urlencoded"
+                  ],
+                  produces: [
+                    "application/xml",
+                    "application/json"
+                  ],
+                  parameters: [
+                    {
+                      name: "petId",
+                      "in": "path",
+                      description: "ID of pet that needs to be updated",
+                      required: true,
+                      type: "integer",
+                      format: "int64"
+                    },
+                    {
+                      name: "name",
+                      "in": "formData",
+                      description: "Updated name of the pet",
+                      required: false,
+                      type: "string"
+                    },
+                    {
+                      name: "status",
+                      "in": "formData",
+                      description: "Updated status of the pet",
+                      required: false,
+                      type: "string"
+                    }
+                  ],
+                  responses: {
+                    "405": {
+                      description: "Invalid input"
+                    }
+                  },
+                  security: [
+                    {
+                      petstore_auth: [
+                        "write:pets",
+                        "read:pets"
+                      ]
+                    }
+                  ],
+                  __originalOperationId: "updatePetWithForm"
+                }
+              }
+            }
+        }
+      })
+
+      // When
+      let result = specJsonWithResolvedSubtrees(state)
+
+      // Then
+      const correctOrder = [
+        "/pet",
+        "/pet/findByStatus",
+        "/pet/findByTags",
+        "/pet/{petId}",
+        "/pet/{petId}/uploadImage",
+        "/store/inventory",
+        "/store/order",
+        "/store/order/{orderId}",
+        "/user",
+        "/user/createWithArray",
+        "/user/createWithList",
+        "/user/login",
+        "/user/logout",
+        "/user/{username}"
+      ]
+      expect(state.getIn(["json", "paths"]).keySeq().toJS()).toEqual(correctOrder)
+      expect(result.getIn(["paths"]).keySeq().toJS()).toEqual(correctOrder)
+    })
+  })
+
+  describe("operationWithMeta", function() {
+    it("should support merging in name+in keyed param metadata", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: [
+                  {
+                    name: "body",
+                    in: "body"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        meta: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: {
+                  "body.body": {
+                    value: "abc123"
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+
+      const result = operationWithMeta(state, "/", "get")
+
+      expect(result.toJS()).toEqual({
+        parameters: [
+          {
+            name: "body",
+            in: "body",
+            value: "abc123"
+          }
+        ]
+      })
+    })
+    it("should support merging in hash-keyed param metadata", function () {
+      const bodyParam = fromJS({
+        name: "body",
+        in: "body"
+      })
+
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: [
+                  bodyParam
+                ]
+              }
+            }
+          }
+        },
+        meta: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: {
+                  [`body.body.hash-${bodyParam.hashCode()}`]: {
+                    value: "abc123"
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+
+      const result = operationWithMeta(state, "/", "get")
+
+      expect(result.toJS()).toEqual({
+        parameters: [
+          {
+            name: "body",
+            in: "body",
+            value: "abc123"
+          }
+        ]
+      })
+    })
+  })
+  describe("parameterWithMeta", function() {
+    it("should support merging in name+in keyed param metadata", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: [
+                  {
+                    name: "body",
+                    in: "body"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        meta: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: {
+                  "body.body": {
+                    value: "abc123"
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+
+      const result = parameterWithMeta(state, ["/", "get"], "body", "body")
+
+      expect(result.toJS()).toEqual({
+        name: "body",
+        in: "body",
+        value: "abc123"
+      })
+    })
+    it("should give best-effort when encountering hash-keyed param metadata", function () {
+      const bodyParam = fromJS({
+        name: "body",
+        in: "body"
+      })
+
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: [
+                  bodyParam
+                ]
+              }
+            }
+          }
+        },
+        meta: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: {
+                  [`body.body.hash-${bodyParam.hashCode()}`]: {
+                    value: "abc123"
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+
+      const result = parameterWithMeta(state, ["/", "get"], "body", "body")
+
+      expect(result.toJS()).toEqual({
+        name: "body",
+        in: "body",
+        value: "abc123"
+      })
+    })
+
+  })
+  describe("parameterWithMetaByIdentity", function() {
+    it("should support merging in name+in keyed param metadata", function () {
+      const bodyParam = fromJS({
+        name: "body",
+        in: "body"
+      })
+
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: [bodyParam]
+              }
+            }
+          }
+        },
+        meta: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: {
+                  "body.body": {
+                    value: "abc123"
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+
+      const result = parameterWithMetaByIdentity(state, ["/", "get"], bodyParam)
+
+      expect(result.toJS()).toEqual({
+        name: "body",
+        in: "body",
+        value: "abc123"
+      })
+    })
+    it("should support merging in hash-keyed param metadata", function () {
+      const bodyParam = fromJS({
+        name: "body",
+        in: "body"
+      })
+
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: [
+                  bodyParam
+                ]
+              }
+            }
+          }
+        },
+        meta: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: {
+                  [`body.body.hash-${bodyParam.hashCode()}`]: {
+                    value: "abc123"
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+
+      const result = parameterWithMetaByIdentity(state, ["/", "get"], bodyParam)
+
+      expect(result.toJS()).toEqual({
+        name: "body",
+        in: "body",
+        value: "abc123"
+      })
+    })
+  })
+  describe("parameterInclusionSettingFor", function() {
+    it("should support getting name+in param inclusion settings", function () {
+      const param = fromJS({
+        name: "param",
+        in: "query",
+        allowEmptyValue: true
+      })
+
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                parameters: [
+                  param
+                ]
+              }
+            }
+          }
+        },
+        meta: {
+          paths: {
+            "/": {
+              "get": {
+                "parameter_inclusions": {
+                  [`param.query`]: true
+                }
+              }
+            }
+          }
+        }
+      })
+
+      const result = parameterInclusionSettingFor(state, ["/", "get"], "param", "query")
+
+      expect(result).toEqual(true)
+    })
+  })
+  describe("producesOptionsFor", function() {
+    it("should return an operation produces value", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                description: "my operation",
+                produces: [
+                  "operation/one",
+                  "operation/two",
+                ]
+              }
+            }
+          }
+        }
+      })
+
+      const result = producesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "operation/one",
+        "operation/two",
+      ])
+    })
+    it("should return a path item produces value", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                description: "my operation",
+                produces: [
+                  "path-item/one",
+                  "path-item/two",
+                ]
+              }
+            }
+          }
+        }
+      })
+
+      const result = producesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "path-item/one",
+        "path-item/two",
+      ])
+    })
+    it("should return a global produces value", function () {
+      const state = fromJS({
+        json: {
+          produces: [
+            "global/one",
+            "global/two",
+          ],
+          paths: {
+            "/": {
+              "get": {
+                description: "my operation"
+              }
+            }
+          }
+        }
+      })
+
+      const result = producesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "global/one",
+        "global/two",
+      ])
+    })
+    it("should favor an operation produces value over a path-item value", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              produces: [
+                "path-item/one",
+                "path-item/two",
+              ],
+              "get": {
+                description: "my operation",
+                produces: [
+                  "operation/one",
+                  "operation/two",
+                ]
+              }
+            }
+          }
+        }
+      })
+
+      const result = producesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "operation/one",
+        "operation/two",
+      ])
+    })
+    it("should favor a path-item produces value over a global value", function () {
+      const state = fromJS({
+        json: {
+          produces: [
+            "global/one",
+            "global/two",
+          ],
+          paths: {
+            "/": {
+              produces: [
+                "path-item/one",
+                "path-item/two",
+              ],
+              "get": {
+                description: "my operation"
+              }
+            }
+          }
+        }
+      })
+
+      const result = producesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "path-item/one",
+        "path-item/two",
+      ])
+    })
+  })
+  describe("consumesOptionsFor", function() {
+    it("should return an operation consumes value", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                description: "my operation",
+                consumes: [
+                  "operation/one",
+                  "operation/two",
+                ]
+              }
+            }
+          }
+        }
+      })
+
+      const result = consumesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "operation/one",
+        "operation/two",
+      ])
+    })
+    it("should return a path item consumes value", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              "get": {
+                description: "my operation",
+                consumes: [
+                  "path-item/one",
+                  "path-item/two",
+                ]
+              }
+            }
+          }
+        }
+      })
+
+      const result = consumesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "path-item/one",
+        "path-item/two",
+      ])
+    })
+    it("should return a global consumes value", function () {
+      const state = fromJS({
+        json: {
+          consumes: [
+            "global/one",
+            "global/two",
+          ],
+          paths: {
+            "/": {
+              "get": {
+                description: "my operation"
+              }
+            }
+          }
+        }
+      })
+
+      const result = consumesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "global/one",
+        "global/two",
+      ])
+    })
+    it("should favor an operation consumes value over a path-item value", function () {
+      const state = fromJS({
+        json: {
+          paths: {
+            "/": {
+              consumes: [
+                "path-item/one",
+                "path-item/two",
+              ],
+              "get": {
+                description: "my operation",
+                consumes: [
+                  "operation/one",
+                  "operation/two",
+                ]
+              }
+            }
+          }
+        }
+      })
+
+      const result = consumesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "operation/one",
+        "operation/two",
+      ])
+    })
+    it("should favor a path-item consumes value over a global value", function () {
+      const state = fromJS({
+        json: {
+          consumes: [
+            "global/one",
+            "global/two",
+          ],
+          paths: {
+            "/": {
+              consumes: [
+                "path-item/one",
+                "path-item/two",
+              ],
+              "get": {
+                description: "my operation"
+              }
+            }
+          }
+        }
+      })
+
+      const result = consumesOptionsFor(state, ["/", "get"])
+
+      expect(result.toJS()).toEqual([
+        "path-item/one",
+        "path-item/two",
+      ])
     })
   })
 })

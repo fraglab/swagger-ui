@@ -1,6 +1,6 @@
 /* eslint-env mocha */
 import expect from "expect"
-import { fromJS, OrderedMap } from "immutable"
+import { Map, fromJS, OrderedMap } from "immutable"
 import {
   mapToList,
   parseSearch,
@@ -20,8 +20,12 @@ import {
   getAcceptControllingResponse,
   createDeepLinkPath,
   escapeDeepLinkPath,
+  getExtensions,
+  getCommonExtensions,
   sanitizeUrl,
-  extractFileNameFromContentDispositionHeader
+  extractFileNameFromContentDispositionHeader,
+  deeplyStripKey,
+  getSampleSchema
 } from "core/utils"
 import win from "core/window"
 
@@ -103,6 +107,18 @@ describe("utils", function() {
     it("should extract filename", function(){
       let cdHeader = "attachment; filename=filename.jpg"
       let expectedResult = "filename.jpg"
+      expect(extractFileNameFromContentDispositionHeader(cdHeader)).toEqual(expectedResult)
+    })
+    
+    it("should extract quoted filename in utf-8", function(){
+      let cdHeader = "attachment; filename*=UTF-8''\"%D1%84%D0%B0%D0%B9%D0%BB.txt\""
+      let expectedResult = "файл.txt"
+      expect(extractFileNameFromContentDispositionHeader(cdHeader)).toEqual(expectedResult)
+    })
+    
+    it("should extract filename in utf-8", function(){
+      let cdHeader = "attachment; filename*=utf-8'ru'%D1%84%D0%B0%D0%B9%D0%BB.txt"
+      let expectedResult = "файл.txt"
       expect(extractFileNameFromContentDispositionHeader(cdHeader)).toEqual(expectedResult)
     })
 
@@ -347,6 +363,12 @@ describe("utils", function() {
       expect( result ).toEqual( expectedError )
     }
 
+    const assertValidateOas3Param = (param, expectedError) => {
+      // for cases where you _only_ want to try OAS3
+      result = validateParam( fromJS(param), false, true )
+      expect( result ).toEqual( expectedError )
+    }
+
     it("should check the isOAS3 flag when validating parameters", function() {
       // This should "skip" validation because there is no `schema` property
       // and we are telling `validateParam` this is an OAS3 spec
@@ -356,6 +378,92 @@ describe("utils", function() {
       })
       result = validateParam( param, false, true )
       expect( result ).toEqual( [] )
+    })
+
+    it("validates required OAS3 objects", function() {
+      // valid object
+      param = {
+        required: true,
+        schema: {
+          type: "object"
+        },
+        value: {
+          abc: 123
+        }
+      }
+      assertValidateOas3Param(param, [])
+
+      // valid object-as-string
+      param = {
+        required: true,
+        schema: {
+          type: "object"
+        },
+        value: JSON.stringify({
+          abc: 123
+        })
+      }
+      assertValidateOas3Param(param, [])
+
+      // invalid object-as-string
+      param = {
+        required: true,
+        schema: {
+          type: "object"
+        },
+        value: "{{}"
+      }
+      assertValidateOas3Param(param, ["Parameter string value must be valid JSON"])
+
+      // missing when required
+      param = {
+        required: true,
+        schema: {
+          type: "object"
+        },
+      }
+      assertValidateOas3Param(param, ["Required field is not provided"])
+    })
+
+    it("validates optional OAS3 objects", function() {
+      // valid object
+      param = {
+        schema: {
+          type: "object"
+        },
+        value: {
+          abc: 123
+        }
+      }
+      assertValidateOas3Param(param, [])
+
+      // valid object-as-string
+      param = {
+        schema: {
+          type: "object"
+        },
+        value: JSON.stringify({
+          abc: 123
+        })
+      }
+      assertValidateOas3Param(param, [])
+
+      // invalid object-as-string
+      param = {
+        schema: {
+          type: "object"
+        },
+        value: "{{}"
+      }
+      assertValidateOas3Param(param, ["Parameter string value must be valid JSON"])
+
+      // missing when not required
+      param = {
+        schema: {
+          type: "object"
+        },
+      }
+      assertValidateOas3Param(param, [])
     })
 
     it("validates required strings", function() {
@@ -895,12 +1003,12 @@ describe("utils", function() {
   describe("createDeepLinkPath", function() {
     it("creates a deep link path replacing spaces with underscores", function() {
       const result = createDeepLinkPath("tag id with spaces")
-      expect(result).toEqual("tag_id_with_spaces")
+      expect(result).toEqual("tag%20id%20with%20spaces")
     })
 
     it("trims input when creating a deep link path", function() {
       let result = createDeepLinkPath("  spaces before and after    ")
-      expect(result).toEqual("spaces_before_and_after")
+      expect(result).toEqual("spaces%20before%20and%20after")
 
       result = createDeepLinkPath("  ")
       expect(result).toEqual("")
@@ -939,6 +1047,86 @@ describe("utils", function() {
     it("escapes a deep link path with an id selector", function() {
       const result = escapeDeepLinkPath("hello#world")
       expect(result).toEqual("hello\\#world")
+    })
+
+    it("escapes a deep link path with a space", function() {
+      const result = escapeDeepLinkPath("hello world")
+      expect(result).toEqual("hello_world")
+    })
+
+    it("escapes a deep link path with a percent-encoded space", function() {
+      const result = escapeDeepLinkPath("hello%20world")
+      expect(result).toEqual("hello_world")
+    })
+  })
+
+  describe("getExtensions", function() {
+    const objTest = Map([[ "x-test", "a"], ["minimum", "b"]])
+    it("does not error on empty array", function() {
+      const result1 = getExtensions([])
+      expect(result1).toEqual([])
+      const result2 = getCommonExtensions([])
+      expect(result2).toEqual([])
+    })
+    it("gets only the x- keys", function() {
+      const result = getExtensions(objTest)
+      expect(result).toEqual(Map([[ "x-test", "a"]]))
+    })
+    it("gets the common keys", function() {
+      const result = getCommonExtensions(objTest, true)
+      expect(result).toEqual(Map([[ "minimum", "b"]]))
+    })
+  })
+
+  describe("deeplyStripKey", function() {
+    it("should filter out a specified key", function() {
+      const input = {
+        $$ref: "#/this/is/my/ref",
+        a: {
+          $$ref: "#/this/is/my/other/ref",
+          value: 12345
+        }
+      }
+      const result = deeplyStripKey(input, "$$ref")
+      expect(result).toEqual({
+        a: {
+          value: 12345
+        }
+      })
+    })
+
+    it("should filter out a specified key by predicate", function() {
+      const input = {
+        $$ref: "#/this/is/my/ref",
+        a: {
+          $$ref: "#/keep/this/one",
+          value: 12345
+        }
+      }
+      const result = deeplyStripKey(input, "$$ref", (v) => v !== "#/keep/this/one")
+      expect(result).toEqual({
+        a: {
+          value: 12345,
+          $$ref: "#/keep/this/one"
+        }
+      })
+    })
+
+    it("should only call the predicate when the key matches", function() {
+      const input = {
+        $$ref: "#/this/is/my/ref",
+        a: {
+          $$ref: "#/this/is/my/other/ref",
+          value: 12345
+        }
+      }
+      let count = 0
+
+      const result = deeplyStripKey(input, "$$ref", () => {
+        count++
+        return true
+      })
+      expect(count).toEqual(2)
     })
   })
 
@@ -992,8 +1180,7 @@ describe("utils", function() {
     })
 
     it("should sanitize a `data:` url", function() {
-      const res = sanitizeUrl(`data:text/html;base64,PHNjcmlwdD5hbGVydCgiSGV
-sbG8iKTs8L3NjcmlwdD4=`)
+      const res = sanitizeUrl(`data:text/html;base64,PHNjcmlwdD5hbGVydCgiSGVsbG8iKTs8L3NjcmlwdD4=`)
 
       expect(res).toEqual("about:blank")
     })
@@ -1022,5 +1209,30 @@ sbG8iKTs8L3NjcmlwdD4=`)
       expect(sanitizeUrl({})).toEqual("")
     })
   })
+  describe("getSampleSchema", function() {
+    const oriDate = Date
 
+    before(function() {
+      Date = function () {
+        this.toISOString = function () {
+          return "2018-07-07T07:07:05.189Z"
+        }
+      }
+    })
+
+    after(function() {
+      Date = oriDate
+    })
+    
+    it("should not unnecessarily stringify non-object values", function() {
+      // Given
+      const res = getSampleSchema({
+        type: "string",
+        format: "date-time"
+      })
+
+      // Then
+      expect(res).toEqual(new Date().toISOString())
+    })
+  })
 })
