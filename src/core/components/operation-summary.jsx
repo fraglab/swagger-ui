@@ -54,6 +54,7 @@ export default class OperationSummary extends PureComponent {
     const OperationSummaryMethod = getComponent("OperationSummaryMethod")
     const OperationSummaryPath = getComponent("OperationSummaryPath")
     const JumpToPath = getComponent("JumpToPath", true)
+    const Markdown = getComponent( "Markdown" )
 
     return (
 
@@ -63,7 +64,7 @@ export default class OperationSummary extends PureComponent {
 
         {!showSummary ? null :
           <div className="opblock-summary-description">
-            {resolvedSummary || summary}
+            <Markdown source={ resolvedSummary || summary } />
           </div>
         }
 
